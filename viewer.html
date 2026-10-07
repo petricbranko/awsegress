@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>awsegress</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --frame: #e6e8ec; --bg: #fbfbfc; --panel: #f3f4f7; --line: #dcdfe5; --text: #1c2028; --muted: #5b6372;
+  --dim: #8a909c; --accent: #b46f22; --node: #ffffff; --node-line: #d3d7de; --band: #f2f3f6; --hover: #eef0f4;
+  --sel: #1c2028; --input: #ffffff; --chip: #e9ebf0; --shadow: #0002;
+  --internet: #d0433a; --third_party: #c4661a; --cross_account: #7a52d4; --cross_region: #2e6dbf;
+  --aws_public: #b06b65; --private: #23936a; --none: #9aa0ab;
+  --high: #d0433a; --medium: #c47a14; --low: #7d8594;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --frame: #050608; --bg: #0d1016; --panel: #11151c; --line: #222835; --text: #d6dae2; --muted: #7c8494;
+    --dim: #545b69; --accent: #e3a55a; --node: #141922; --node-line: #262d3a; --band: #10141b; --hover: #1a202b;
+    --sel: #f1f3f7; --input: #0a0d12; --chip: #1b212c; --shadow: #0008;
+    --internet: #e5534b; --third_party: #e0884a; --cross_account: #9870ee; --cross_region: #4d8ad6;
+    --aws_public: #b77a74; --private: #3fb68b; --none: #5a6170;
+    --high: #e5534b; --medium: #e0a04a; --low: #7c8494;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--frame); color: var(--text);
+  font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums; overflow: hidden; }
+.app { position: fixed; inset: 10px; display: grid; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+
+header { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 9px 14px;
+  border-bottom: 1px solid var(--line); min-width: 0; }
+.logo { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: .2px; }
+.logo svg { display: block; }
+.crumbs { color: var(--dim); display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.crumbs a { color: var(--muted); cursor: pointer; text-decoration: none; }
+.crumbs a:hover { color: var(--text); }
+.crumbs .cur { color: var(--text); background: var(--chip); padding: 2px 7px; border-radius: 4px; }
+.spacer { flex: 1; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; padding: 2px; gap: 2px; }
+.seg button { background: none; border: 0; color: var(--muted); font: inherit; padding: 4px 11px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.seg button.on { background: var(--chip); color: var(--text); }
+.seg button:hover { color: var(--text); }
+#export { background: none; border: 1px solid var(--line); color: var(--muted); font: inherit; padding: 5px 10px;
+  border-radius: 6px; cursor: pointer; white-space: nowrap; }
+#export:hover { color: var(--text); border-color: var(--dim); }
+#filter { background: var(--input); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 9px;
+  border-radius: 6px; width: 170px; outline: none; }
+#filter:focus { border-color: var(--dim); }
+
+.sub { display: flex; align-items: center; gap: 16px; padding: 8px 14px 6px; color: var(--muted); min-width: 0; overflow: hidden; white-space: nowrap; }
+.sub b { color: var(--text); font-weight: 600; }
+.cats { display: flex; gap: 14px; margin-left: auto; }
+.cats span { display: flex; align-items: center; gap: 5px; }
+.cats i { width: 9px; height: 9px; border-radius: 2px; }
+.cats .zero { opacity: .45; }
+
+#map { position: relative; margin: 2px 0 0 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+#map svg { display: block; }
+.colh { fill: var(--dim); font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; }
+.band rect { fill: var(--band); stroke: var(--line); }
+.gh { cursor: pointer; }
+.gh text { fill: var(--muted); font-size: 11px; }
+.gh .cnt { fill: var(--dim); }
+.gh:hover text { fill: var(--text); }
+.lnk { fill: none; stroke: var(--c); stroke-opacity: .45; transition: stroke-opacity .12s; }
+.nd { cursor: pointer; }
+.nd .nb { fill: var(--node); stroke: var(--node-line); }
+.nd .nc { fill: var(--c); }
+.nd:hover .nb { fill: var(--hover); }
+.nd text { font-size: 11.5px; fill: var(--text); pointer-events: none; }
+.nd .ns { fill: var(--dim); font-size: 10.5px; }
+.nd.agg .nb { stroke-dasharray: 3 2; }
+.nd.agg text { fill: var(--muted); }
+.nd.sel .nb { stroke: var(--sel); stroke-width: 1.5; }
+svg.focus .lnk { stroke-opacity: .06; }
+svg.focus .lnk.on { stroke-opacity: .9; }
+svg.focus .nd { opacity: .28; }
+svg.focus .nd.on { opacity: 1; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+aside { grid-column: 2; grid-row: 2 / 4; border-left: 1px solid var(--line); background: var(--panel);
+  padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.h { color: var(--dim); font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; display: flex; justify-content: space-between; gap: 8px; }
+.h b { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.sel-name { font-size: 16px; border-left: 3px solid var(--c, var(--accent)); padding-left: 8px; margin-top: 8px; word-break: break-word; }
+.sel-kind { color: var(--muted); margin: 3px 0 0 11px; }
+.chip { display: inline-block; border-radius: 4px; padding: 0 6px; font-size: 11px; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  color: var(--c); margin-right: 4px; white-space: nowrap; }
+.arn { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-all; margin-top: 10px; user-select: all; }
+.kv { display: grid; grid-template-columns: minmax(80px, auto) 1fr; gap: 4px 10px; margin-top: 10px; }
+.kv span { color: var(--dim); }
+.kv div { word-break: break-word; }
+.kv ul { margin: 0; padding-left: 14px; }
+a.console { display: inline-block; margin-top: 10px; color: var(--accent); text-decoration: none; }
+a.console:hover { text-decoration: underline; }
+.flag { border-left: 3px solid var(--s); padding: 3px 0 3px 9px; margin-top: 10px; }
+.flag .fm { color: var(--text); }
+.flag .ff { color: var(--muted); margin-top: 2px; }
+.flag .fs { color: var(--s); font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; }
+.reach { margin-top: 10px; }
+.reach div { display: flex; gap: 6px; align-items: baseline; margin-top: 3px; cursor: pointer; }
+.reach div:hover { color: var(--accent); }
+.reach i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.hint { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; border-left: 3px solid var(--s);
+  padding: 2px 0 2px 9px; cursor: pointer; margin-top: 10px; }
+.hint:hover .hn { color: var(--accent); }
+.hn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hv { text-align: right; color: var(--s); font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; }
+.hs { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.more { color: var(--accent); cursor: pointer; margin-top: 10px; display: inline-block; }
+.ns { margin-top: 8px; color: var(--muted); }
+.ns b { color: var(--text); font-weight: 500; }
+.ns div { font-size: 11px; color: var(--dim); word-break: break-word; }
+.note { margin-top: 8px; color: var(--muted); }
+.members div { padding: 2px 0; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.members div:hover { color: var(--accent); }
+.members span { color: var(--dim); }
+
+footer { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 7px 14px; border-top: 1px solid var(--line);
+  color: var(--dim); white-space: nowrap; overflow: hidden; }
+kbd { font: 10.5px ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+.badge { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 4px; padding: 0 6px; }
+
+#tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  z-index: 10; display: none; max-width: 340px; box-shadow: 0 6px 24px var(--shadow); }
+#tip .t1 { color: var(--text); word-break: break-word; }
+#tip .t2 { color: var(--muted); margin-top: 3px; }
+
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  .app { position: static; margin: 8px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 70vh auto auto; }
+  aside { grid-column: 1; grid-row: 4; border-left: 0; border-top: 1px solid var(--line); }
+  footer { grid-row: 5; }
+  header { flex-wrap: wrap; } .cats { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><svg width="18" height="14" viewBox="0 0 18 14"><rect x="0" y="1" width="4" height="4" rx="1" fill="var(--private)"/><rect x="0" y="9" width="4" height="4" rx="1" fill="var(--cross_region)"/><rect x="7" y="5" width="4" height="4" rx="1" fill="var(--third_party)"/><rect x="14" y="5" width="4" height="4" rx="1" fill="var(--internet)"/><path d="M4 3 C6 3 6 7 7 7 M4 11 C6 11 6 7 7 7 M11 7 H14" stroke="var(--muted)" fill="none"/></svg>awsegress</div>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="spacer"></div>
+    <div class="seg" id="groups">
+      <button data-g="type">Egress type</button><button data-g="vpc">VPC</button><button data-g="account">Account / region</button>
+    </div>
+    <button id="export" title="Download a JSON summary to give to an AI agent (e)">Export for AI</button>
+    <input id="filter" placeholder="filter  /" autocomplete="off" spellcheck="false">
+  </header>
+  <div class="sub" id="sub"></div>
+  <div id="map"></div>
+  <aside id="side"></aside>
+  <footer>
+    <span><kbd>click</kbd>path</span><span><kbd>dbl-click</kbd><kbd>enter</kbd>zoom</span><span><kbd>Backspace</kbd>back</span>
+    <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>group</span><span><kbd>/</kbd>filter</span><span><kbd>e</kbd>export</span><span><kbd>esc</kbd>clear</span>
+    <span class="spacer"></span><span id="meta"></span>
+  </footer>
+</div>
+<div id="tip"></div>
+
+<script>
+const DATA = __AWSEGRESS_DATA__;
+
+const G = DATA.graph, TYPES = DATA.types, CATS = DATA.categories, ORDER = Object.keys(CATS);
+const LAYERS = ["source", "egress", "destination"];
+const COL_TITLE = ["Sources", "Egress points", "Destinations"];
+const SEV = ["high", "medium", "low"];
+const COLLAPSE_AT = 150;   // above this many visible nodes, groups start collapsed
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const rank = c => (c && ORDER.includes(c) ? ORDER.indexOf(c) : 99);
+const catVar = c => (c ? `var(--${c})` : "var(--none)");
+const typeLabel = t => (TYPES[t] || [t])[0];
+const typeShort = t => (TYPES[t] || [, t])[1];
+const state = { group: "type", filter: "", stack: [], sel: null, toggled: new Set() };
+
+// ---------- graph indexes
+const byId = {}, inE = {}, outE = {}, edgeById = {};
+for (const n of G.nodes) { byId[n.id] = n; inE[n.id] = []; outE[n.id] = []; }
+for (const e of G.edges) { edgeById[e.id] = e; outE[e.from].push(e); inE[e.to].push(e); }
+const carries = (e, s) => !e.sources || e.sources.includes(s);
+
+// The full path through a set of nodes: for a source only the flows it actually takes,
+// for a destination only the sources that actually reach it.
+function pathOf(ids) {
+  const N = new Set(), E = new Set();
+  const fromSource = s => {
+    N.add(s);
+    for (const e of outE[s]) {
+      E.add(e.id); N.add(e.to);
+      for (const x of outE[e.to]) if (carries(x, s)) { E.add(x.id); N.add(x.to); }
+    }
+  };
+  for (const id of ids) {
+    const n = byId[id]; if (!n) continue;
+    N.add(id);
+    if (n.layer === "source") fromSource(id);
+    else if (n.layer === "egress") {
+      for (const e of inE[id]) { E.add(e.id); N.add(e.from); }
+      for (const e of outE[id]) { E.add(e.id); N.add(e.to); }
+    } else {
+      for (const e of inE[id]) {
+        E.add(e.id); N.add(e.from);
+        const srcs = e.sources || inE[e.from].map(x => x.from);
+        for (const s of srcs) { const se = edgeById[`${s}>${e.from}`]; if (se) { E.add(se.id); N.add(s); } }
+      }
+    }
+  }
+  return { nodes: N, edges: E };
+}
+
+// destination categories each source reaches
+const reach = {};
+for (const n of G.nodes) if (n.layer === "source") {
+  const cats = new Set();
+  for (const e of outE[n.id]) for (const x of outE[e.to]) if (carries(x, n.id)) cats.add(byId[x.to].category);
+  reach[n.id] = cats;
+}
+
+const vpcLabel = v => (DATA.graph.vpcs && DATA.graph.vpcs[v] ? `${DATA.graph.vpcs[v]} (${v})` : v);
+const searchText = {};
+for (const n of G.nodes) searchText[n.id] = [n.name, n.id, typeLabel(n.type), n.arn, n.region, n.vpc, n.vpc && vpcLabel(n.vpc), n.account,
+  CATS[n.category], ...n.flags.map(f => f.code + " " + f.message)].filter(Boolean).join(" ").toLowerCase();
+const sevRank = s => (SEV.includes(s) ? SEV.indexOf(s) : 9);
+const worstFlag = n => n.flags.reduce((w, f) => (sevRank(f.severity) < sevRank(w) ? f.severity : w), null);
+
+// ---------- grouping
+function primaryEgress(n) {
+  const outs = outE[n.id].map(e => byId[e.to]).sort((a, b) => rank(a.category) - rank(b.category));
+  return outs.length ? outs[0].type : "none";
+}
+function groupOf(n) {
+  if (n.layer === "destination") return { key: "c:" + n.category, label: CATS[n.category] || n.category, order: rank(n.category) };
+  if (state.group === "type") {
+    if (n.layer === "egress") return { key: "t:" + n.type, label: typeLabel(n.type) };
+    const t = primaryEgress(n);
+    return { key: "t:" + t, label: "via " + typeLabel(t) };
+  }
+  if (state.group === "vpc") return n.vpc ? { key: "v:" + n.vpc, label: vpcLabel(n.vpc) } : { key: "v:", label: "No VPC", order: 1e9 };
+  return { key: `a:${n.account || ""}|${n.region || ""}`, label: `${n.account || "external"} / ${n.region || "global"}` };
+}
+
+// ---------- visible model: groups -> units (a node, or a collapsed group) -> unit edges
+function visibleNodes() {
+  let ids = state.stack.length ? state.stack[state.stack.length - 1].ids : null;
+  if (state.filter) {
+    const q = state.filter.toLowerCase();
+    const hits = G.nodes.filter(n => (!ids || ids.has(n.id)) && searchText[n.id].includes(q)).map(n => n.id);
+    const p = pathOf(hits).nodes;
+    ids = new Set([...p].filter(x => !ids || ids.has(x)));
+  }
+  return ids ? G.nodes.filter(n => ids.has(n.id)) : G.nodes;
+}
+
+function build() {
+  const nodes = visibleNodes(), big = nodes.length > COLLAPSE_AT;
+  const cols = LAYERS.map(() => new Map());
+  for (const n of nodes) {
+    const g = groupOf(n), col = LAYERS.indexOf(n.layer);
+    let grp = cols[col].get(g.key);
+    if (!grp) cols[col].set(g.key, (grp = { ...g, col, nodes: [], tk: col + "|" + g.key }));
+    grp.nodes.push(n);
+  }
+  const units = [], unitOf = {}, groups = cols.map(m => [...m.values()]);
+  for (const list of groups) for (const grp of list) {
+    grp.collapsed = grp.nodes.length > 1 && ((big && grp.nodes.length > 3) !== state.toggled.has(grp.tk));
+    if (grp.collapsed) {
+      const u = { id: "agg:" + grp.tk, agg: true, grp, col: grp.col, members: grp.nodes,
+        category: grp.nodes.reduce((w, n) => (rank(n.category) < rank(w) ? n.category : w), null),
+        flags: grp.nodes.reduce((s, n) => s + n.flags.length, 0) };
+      grp.units = [u]; units.push(u);
+      for (const n of grp.nodes) unitOf[n.id] = u;
+    } else {
+      grp.units = grp.nodes.map(n => { const u = { id: n.id, n, grp, col: grp.col, members: [n], category: n.category }; unitOf[n.id] = u; units.push(u); return u; });
+    }
+  }
+  const ue = new Map();
+  for (const e of G.edges) {
+    const a = unitOf[e.from], b = unitOf[e.to];
+    if (!a || !b || a === b) continue;
+    const k = a.id + ">" + b.id;
+    let x = ue.get(k);
+    if (!x) ue.set(k, (x = { a, b, edges: [], category: e.category }));
+    x.edges.push(e);
+    if (rank(e.category) < rank(x.category)) x.category = e.category;
+  }
+  const L = { groups, units, uedges: [...ue.values()], unitOf, count: nodes.length };
+  order(L);
+  return L;
+}
+
+// group order by label, then a few barycenter sweeps to untangle the links
+function order(L) {
+  const nb = {};
+  for (const x of L.uedges) { (nb[x.a.id] ||= []).push(x.b); (nb[x.b.id] ||= []).push(x.a); }
+  for (const list of L.groups) {
+    list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.label.localeCompare(b.label));
+    for (const g of list) g.units.sort((a, b) => rank(a.category) - rank(b.category) || unitName(a).localeCompare(unitName(b)));
+  }
+  const pos = {};
+  const assign = () => L.groups.forEach(list => {
+    const total = list.reduce((s, g) => s + g.units.length, 0); let i = 0;
+    for (const g of list) for (const u of g.units) pos[u.id] = total > 1 ? i++ / (total - 1) : 0.5;
+  });
+  const bary = u => { const xs = nb[u.id]; return xs && xs.length ? xs.reduce((s, v) => s + pos[v.id], 0) / xs.length : pos[u.id]; };
+  assign();
+  for (let it = 0; it < 3; it++) for (const col of [1, 0, 2]) {
+    const list = L.groups[col];
+    for (const g of list) { for (const u of g.units) u.b = bary(u); g.units.sort((a, b) => a.b - b.b); g.b = g.units.reduce((s, u) => s + u.b, 0) / g.units.length; }
+    if (col !== 2) list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.b - b.b);
+    assign();
+  }
+}
+
+const unitName = u => (u.agg ? u.grp.label : u.n.name);
+
+// ---------- layout + drawing
+const NH = 24, NG = 4, GH = 22, GG = 12, TOP = 30, BOTTOM = 16;
+const map = $("#map");
+let L = null;
+
+function layout(L, W) {
+  const colW = Math.max(60, Math.min(290, (W - 60) * 0.25, (W - 32 - 2 * 24) / 3));  // always leave room for the links
+  const xs = [16, Math.round((W - colW) / 2), Math.round(W - 16 - colW)];
+  const colH = L.groups.map(list => list.reduce((s, g) => s + GH + g.units.length * (NH + NG) - NG + 6 + GG, 0) - (list.length ? GG : 0));
+  const H = Math.max(...colH, 0);
+  L.groups.forEach((list, col) => {
+    let y = TOP;
+    for (const g of list) {
+      g.x = xs[col]; g.y = y; g.w = colW;
+      let uy = y + GH;
+      for (const u of g.units) { u.x = xs[col]; u.y = uy; u.w = colW; uy += NH + NG; }
+      g.h = uy - NG + 6 - y; y += g.h + GG;
+    }
+  });
+  L.W = W; L.H = TOP + H + BOTTOM; L.colW = colW; L.xs = xs;
+}
+
+function fit(s, px) {
+  const max = Math.max(3, Math.floor(px / 6.4));
+  return s.length > max ? s.slice(0, max - 3) + "..." : s;
+}
+
+function render() {
+  L = build();
+  const W = map.clientWidth;
+  if (!L.units.length) {
+    map.innerHTML = `<div class="empty">${state.filter ? "Nothing matches \"" + esc(state.filter) + "\"" : "No egress paths found"}</div>`;
+    renderChrome(); renderSide(); return;
+  }
+  layout(L, W);
+  const out = [`<svg id="svg" width="${W}" height="${L.H}" viewBox="0 0 ${W} ${L.H}">`];
+  L.xs.forEach((x, i) => out.push(`<text class="colh" x="${x}" y="16">${COL_TITLE[i]}</text>`));
+  for (const list of L.groups) for (const g of list) {
+    const toggle = g.nodes.length > 1 ? (g.collapsed ? "+" : "-") : "";
+    out.push(`<g class="band"><rect x="${g.x - 6}" y="${g.y}" width="${g.w + 12}" height="${g.h}" rx="7"/></g>`,
+      `<g class="gh" data-g="${esc(g.tk)}"><text x="${g.x}" y="${g.y + 15}">${esc(fit(g.label, g.w - 50))}</text>` +
+      `<text class="cnt" x="${g.x + g.w}" y="${g.y + 15}" text-anchor="end">${g.nodes.length} ${toggle}</text></g>`);
+  }
+  L.uedges.forEach((x, i) => {
+    const x1 = x.a.x + x.a.w, y1 = x.a.y + NH / 2, x2 = x.b.x, y2 = x.b.y + NH / 2, c = (x2 - x1) / 2;
+    const w = (1.1 + Math.min(3, Math.log2(x.edges.length))).toFixed(1);
+    out.push(`<path class="lnk" data-i="${i}" style="--c:${catVar(x.category)}" stroke-width="${w}" d="M${x1} ${y1}C${x1 + c} ${y1} ${x2 - c} ${y2} ${x2} ${y2}"/>`);
+  });
+  L.units.forEach((u, i) => {
+    const sev = u.agg ? null : worstFlag(u.n);
+    const right = u.agg ? (u.flags ? `${u.flags} flags` : "")
+      : (state.group === "type" || u.n.layer === "destination" ? "" : typeShort(u.n.type));
+    const dot = sev ? `<circle cx="${u.w - 9}" cy="${NH / 2}" r="3.5" fill="var(--${sev})"/>` : "";
+    const rightW = right ? right.length * 6 + 8 : 0, dotW = dot ? 14 : 0;
+    out.push(`<g class="nd${u.agg ? " agg" : ""}" data-u="${i}" transform="translate(${u.x},${u.y})" style="--c:${catVar(u.category)}">` +
+      `<rect class="nb" width="${u.w}" height="${NH}" rx="5"/><rect class="nc" x="0" y="0" width="4" height="${NH}" rx="2"/>` +
+      `<text x="11" y="16">${esc(fit(u.agg ? `${u.members.length} ${COL_TITLE[u.col].toLowerCase()}, click to list` : u.n.name, u.w - 18 - rightW - dotW))}</text>` +
+      (right ? `<text class="ns" x="${u.w - 8 - dotW}" y="16" text-anchor="end">${esc(right)}</text>` : "") + dot + `</g>`);
+  });
+  out.push("</svg>");
+  map.innerHTML = out.join("");
+  renderChrome();
+  highlight();
+  renderSide();
+}
+
+function selUnit() {
+  if (!state.sel || !L) return null;
+  return L.units.find(u => u.id === state.sel) || (L.unitOf[state.sel] || null);
+}
+
+function highlight() {
+  const svg = $("#svg"); if (!svg) return;
+  const u = selUnit();
+  svg.classList.toggle("focus", !!u);
+  svg.querySelectorAll(".on,.sel").forEach(el => el.classList.remove("on", "sel"));
+  if (!u) return;
+  const p = pathOf(u.members.map(n => n.id));
+  svg.querySelectorAll(".nd").forEach(el => {
+    const x = L.units[+el.dataset.u];
+    if (x.members.some(n => p.nodes.has(n.id))) el.classList.add("on");
+    if (x === u) el.classList.add("sel");
+  });
+  svg.querySelectorAll(".lnk").forEach(el => {
+    if (L.uedges[+el.dataset.i].edges.some(e => p.edges.has(e.id))) el.classList.add("on");
+  });
+}
+
+// ---------- chrome
+function renderChrome() {
+  document.querySelectorAll("#groups button").forEach(b => b.classList.toggle("on", b.dataset.g === state.group));
+  $("#crumbs").innerHTML = `<span>/</span>` + (state.stack.length
+    ? `<a data-crumb="0">all</a>` + state.stack.map((s, i) => i === state.stack.length - 1
+      ? `<span>/</span><span class="cur">${esc(s.label)}</span>` : `<span>/</span><a data-crumb="${i + 1}">${esc(s.label)}</a>`).join("")
+    : `<span class="cur">all egress</span>`);
+  const layer = l => G.nodes.filter(n => n.layer === l).length;
+  const counts = Object.fromEntries(ORDER.map(c => [c, 0]));
+  for (const id in reach) for (const c of reach[id]) if (c in counts) counts[c]++;
+  const shown = L ? L.count : 0;
+  $("#sub").innerHTML = `<span><b>${layer("source")}</b> sources, <b>${layer("egress")}</b> egress points, <b>${layer("destination")}</b> destinations</span>
+    ${shown !== G.nodes.length ? `<span>showing ${shown}</span>` : ""}
+    <div class="cats" title="sources that can reach each kind of destination">${ORDER.map(c =>
+      `<span class="${counts[c] ? "" : "zero"}"><i style="background:var(--${c})"></i>${esc(CATS[c])} <b>${counts[c]}</b></span>`).join("")}</div>`;
+}
+
+// ---------- side panel
+const fmtKey = k => k.replace(/_/g, " ");
+function fmtVal(v) {
+  if (Array.isArray(v)) return v.length > 1 ? `<ul>${v.map(x => `<li>${fmtVal(x)}</li>`).join("")}</ul>` : fmtVal(v[0]);
+  if (v && typeof v === "object") return esc(Object.entries(v).map(([k, x]) => `${k}: ${x}`).join(", "));
+  if (v === true) return "yes"; if (v === false) return "no";
+  return esc(v);
+}
+function flagHtml(f) {
+  return `<div class="flag" style="--s:var(--${f.severity})"><div class="fs">${esc(f.severity)} &middot; ${esc(f.code)}</div>
+    <div class="fm">${esc(f.message)}</div><div class="ff">Fix: ${esc(f.fix)}</div></div>`;
+}
+function nodeSection(n) {
+  const fields = [["account", n.account], ["region", n.region], ["vpc", n.vpc && vpcLabel(n.vpc)], ["az", n.az]].filter(([, v]) => v);
+  const details = Object.entries(n.details || {});
+  let reachHtml = "";
+  if (n.layer === "source") {
+    const dests = new Map();
+    for (const e of outE[n.id]) for (const x of outE[e.to]) if (carries(x, n.id)) dests.set(x.to, [...(dests.get(x.to) || []), byId[e.to].name]);
+    reachHtml = `<div class="h" style="margin-top:14px">Reaches</div><div class="reach">` + [...dests].sort((a, b) => rank(byId[a[0]].category) - rank(byId[b[0]].category))
+      .map(([d, via]) => `<div data-jump="${esc(d)}"><i style="background:${catVar(byId[d].category)}"></i><span>${esc(byId[d].name)} <span style="color:var(--dim)">via ${esc([...new Set(via)].join(", "))}</span></span></div>`).join("") + `</div>`;
+  } else {
+    const ins = n.layer === "egress" ? inE[n.id].map(e => byId[e.from]) : [...pathOf([n.id]).nodes].map(id => byId[id]).filter(x => x.layer === "source");
+    const outs = n.layer === "egress" ? outE[n.id].map(e => byId[e.to]) : [];
+    const list = (title, xs) => xs.length ? `<div class="h" style="margin-top:14px">${title} <b>${xs.length}</b></div><div class="reach">` +
+      xs.slice(0, 40).map(x => `<div data-jump="${esc(x.id)}"><i style="background:${catVar(x.category)}"></i><span>${esc(x.name)} <span style="color:var(--dim)">${esc(typeLabel(x.type))}</span></span></div>`).join("") +
+      (xs.length > 40 ? `<div style="color:var(--dim)">and ${xs.length - 40} more</div>` : "") + `</div>` : "";
+    reachHtml = list(n.layer === "egress" ? "Used by" : "Reached by", ins) + list("Leads to", outs);
+  }
+  return `<section><div class="h">Selection</div>
+    <div class="sel-name" style="--c:${catVar(n.category)}">${esc(n.name)}</div>
+    <div class="sel-kind">${esc(typeLabel(n.type))} &middot; ${esc(n.layer === "egress" ? "egress point" : n.layer)}</div>
+    <div style="margin-top:10px">${n.category ? `<span class="chip" style="--c:${catVar(n.category)}">${esc(CATS[n.category])}</span>` : ""}</div>
+    ${n.arn ? `<div class="arn">${esc(n.arn)}</div>` : ""}
+    ${fields.length || details.length ? `<div class="kv">${[...fields, ...details].map(([k, v]) => `<span>${esc(fmtKey(k))}</span><div>${fmtVal(v)}</div>`).join("")}</div>` : ""}
+    ${n.console_url ? `<a class="console" href="${esc(n.console_url)}" target="_blank" rel="noopener">Open in AWS console</a>` : ""}
+    ${n.flags.length ? `<div class="h" style="margin-top:16px">Flags <b>${n.flags.length}</b></div>` + n.flags.map(flagHtml).join("") : ""}
+    ${reachHtml}</section>`;
+}
+function aggSection(u) {
+  return `<section><div class="h">Group</div><div class="sel-name" style="--c:${catVar(u.category)}">${esc(u.grp.label)}</div>
+    <div class="sel-kind">${u.members.length} ${esc(COL_TITLE[u.col].toLowerCase())} (collapsed: click a name or the group header to expand)</div>
+    <div class="members" style="margin-top:10px">${u.members.slice().sort((a, b) => a.name.localeCompare(b.name)).map(n =>
+      `<div data-jump="${esc(n.id)}"><b style="font-weight:400">${esc(n.name)}</b><span>${n.flags.length ? n.flags.length + " flags" : esc(typeShort(n.type))}</span></div>`).join("")}</div></section>`;
+}
+
+const allFlags = G.nodes.flatMap(n => n.flags.map(f => ({ n, f })))
+  .sort((a, b) => sevRank(a.f.severity) - sevRank(b.f.severity) || a.f.code.localeCompare(b.f.code) || a.n.name.localeCompare(b.n.name));
+let showAllFlags = false;
+
+function renderSide() {
+  const u = selUnit();
+  let html = u ? (u.agg ? aggSection(u) : nodeSection(u.n)) : overview();
+  if (allFlags.length) {
+    const bySev = SEV.map(s => [s, allFlags.filter(x => x.f.severity === s).length]).filter(([, c]) => c);
+    const list = showAllFlags ? allFlags : allFlags.slice(0, 12);
+    html += `<section><div class="h">Worth a look <b>${bySev.map(([s, c]) => `<span style="color:var(--${s})">${c} ${s}</span>`).join(" &middot; ")}</b></div>` +
+      list.map((x, i) => `<div class="hint" data-flag="${i}" style="--s:var(--${x.f.severity})">
+        <div class="hn" title="${esc(x.n.name)}">${esc(x.n.name)}</div><div class="hv">${esc(x.f.severity)}</div>
+        <div class="hs">${esc(x.f.message)}</div></div>`).join("") +
+      (allFlags.length > list.length ? `<span class="more" data-more>show all ${allFlags.length}</span>` : "") + `</section>`;
+  }
+  const ns = DATA.not_scanned || [];
+  html += `<section><div class="h">Not scanned <b>${ns.length || "none"}</b></div>` +
+    (ns.length ? ns.map(s => `<div class="ns"><b>${esc(s.region)}</b> ${esc(s.service)} ${esc(s.op)}${s.count > 1 ? ` (x${s.count})` : ""}<div>${esc(s.error)}</div></div>`).join("")
+      : `<div class="note">Every service in every region was read.</div>`) + `</section>`;
+  const aa = (DATA.export && DATA.export.access_analyzer) || null;
+  if (aa) html += `<section><div class="h">IAM Access Analyzer</div><div class="note">${esc(aa.note)}</div></section>`;
+  $("#side").innerHTML = html;
+}
+
+function overview() {
+  const m = DATA.meta || {};
+  return `<section><div class="h">Account</div><div class="sel-name">${esc(m.account || "unknown")}</div>
+    <div class="sel-kind">${(m.regions || []).length} regions${m.deep ? ", deep scan" : ""}</div>
+    <div class="note">Every way data can leave this account: what and how, not how much. Click a node to trace its path.</div></section>`;
+}
+
+// ---------- interaction
+function select(id) { state.sel = id; highlight(); renderSide(); }
+function zoom(u) {
+  if (!u) return;
+  const p = pathOf(u.members.map(n => n.id));
+  state.stack.push({ label: u.agg ? u.grp.label : u.n.name, ids: p.nodes });
+  state.sel = u.agg ? null : u.id;
+  render(); map.scrollTop = 0;
+}
+function back() {
+  if (state.stack.length) { state.stack.pop(); render(); }
+  else if (state.sel) select(null);
+}
+function jump(id) {
+  const n = byId[id]; if (!n) return;
+  state.stack = []; state.filter = ""; $("#filter").value = "";
+  let B = build();
+  const u = B.unitOf[id];
+  if (u && u.agg) state.toggled.has(u.grp.tk) ? state.toggled.delete(u.grp.tk) : state.toggled.add(u.grp.tk);
+  state.sel = id;
+  render();
+  const x = L.unitOf[id];
+  if (x) map.scrollTop = Math.max(0, x.y - map.clientHeight / 3);
+}
+function setGroup(g) { if (g !== state.group) { state.group = g; state.toggled.clear(); render(); } }
+
+map.addEventListener("click", e => {
+  const nd = e.target.closest(".nd"), gh = e.target.closest(".gh");
+  if (nd) select(L.units[+nd.dataset.u].id);
+  else if (gh) { const tk = gh.dataset.g; state.toggled.has(tk) ? state.toggled.delete(tk) : state.toggled.add(tk); render(); }
+  else select(null);
+});
+map.addEventListener("dblclick", e => { const nd = e.target.closest(".nd"); if (nd) zoom(L.units[+nd.dataset.u]); });
+$("#groups").addEventListener("click", e => e.target.dataset.g && setGroup(e.target.dataset.g));
+$("#crumbs").addEventListener("click", e => {
+  const a = e.target.closest("[data-crumb]"); if (!a) return;
+  state.stack = state.stack.slice(0, +a.dataset.crumb); render();
+});
+$("#filter").addEventListener("input", e => { state.filter = e.target.value.trim(); render(); });
+$("#side").addEventListener("click", e => {
+  const f = e.target.closest("[data-flag]"), j = e.target.closest("[data-jump]");
+  if (e.target.closest("[data-more]")) { showAllFlags = true; renderSide(); }
+  else if (f) jump(allFlags[+f.dataset.flag].n.id);
+  else if (j) jump(j.dataset.jump);
+});
+document.addEventListener("keydown", e => {
+  const typing = e.target === $("#filter");
+  if (e.key === "Escape") {
+    if (typing || state.filter) { $("#filter").value = ""; $("#filter").blur(); if (state.filter) { state.filter = ""; render(); } }
+    else if (state.sel) select(null);
+    else back();
+    return;
+  }
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") { e.preventDefault(); $("#filter").focus(); }
+  else if (e.key === "Enter") zoom(selUnit());
+  else if (e.key === "Backspace") { e.preventDefault(); back(); }
+  else if (e.key === "e" && DATA.export) exportJSON();
+  else if (["1", "2", "3"].includes(e.key)) setGroup(["type", "vpc", "account"][+e.key - 1]);
+});
+
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(DATA.export, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "awsegress-export.json" });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$("#export").addEventListener("click", exportJSON);
+if (!DATA.export) $("#export").style.display = "none";
+
+const tip = $("#tip");
+map.addEventListener("mousemove", e => {
+  const nd = e.target.closest(".nd");
+  if (!nd) { tip.style.display = "none"; return; }
+  const u = L.units[+nd.dataset.u];
+  if (u.agg) {
+    tip.innerHTML = `<div class="t1"><b>${esc(u.grp.label)}</b></div><div class="t2">${u.members.length} collapsed, click the header to expand</div>`;
+  } else {
+    const n = u.n;
+    tip.innerHTML = `<div class="t1"><b>${esc(n.name)}</b></div><div class="t2">${esc(typeLabel(n.type))}${n.region ? " &middot; " + esc(n.region) : ""}` +
+      `${n.category ? " &middot; " + esc(CATS[n.category]) : ""}${n.flags.length ? " &middot; " + n.flags.length + " flags" : ""}</div>`;
+  }
+  tip.style.display = "block";
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - tw - 8) + "px";
+  tip.style.top = Math.min(e.clientY + 14, innerHeight - th - 8) + "px";
+});
+map.addEventListener("mouseleave", () => (tip.style.display = "none"));
+
+const M = DATA.meta || {};
+$("#meta").innerHTML = (M.demo ? `<span class="badge">demo data</span> ` : "") +
+  `account ${esc(M.account || "?")} &middot; ${(M.regions || []).length} regions &middot; profile ${esc(M.profile || "default")} &middot; read ${esc(M.generated || "")}`;
+let raf, lastW = 0;
+render();
+new ResizeObserver(() => { if (map.clientWidth === lastW) return; lastW = map.clientWidth; cancelAnimationFrame(raf); raf = requestAnimationFrame(render); }).observe(map);
+</script>
+</body>
+</html>

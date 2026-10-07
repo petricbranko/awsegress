@@ -1,0 +1,9 @@
+# Generated output: contains your AWS account IDs and resource names. Never commit it.
+out/
+awsegress-data.json
+awsegress-export.json
+awsegress.html
+
+__pycache__/
+*.pyc
+.DS_Store
